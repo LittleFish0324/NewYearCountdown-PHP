@@ -2,28 +2,14 @@
 // 设置响应头
 header('Content-Type: application/json; charset=utf-8');
 
-// 直接定义数据库配置
-$servername = "localhost";
-$username = "newyearcountdown";
-$password = "NPcm7A9wiGYiSfdT";
-$dbname = "newyearcountdown";
+// 引入配置文件
+require_once '../config.php';
 
-// 创建数据库连接
-$conn = new mysqli($servername, $username, $password, $dbname);
+// 获取数据库连接
+$conn = getDbConnection();
 
-// 检查连接
-if ($conn->connect_error) {
-    die(json_encode(['success' => false, 'message' => '数据库连接失败']));
-}
-
-// 创建祝福表（如果不存在）
-$create_bless_table = "CREATE TABLE IF NOT EXISTS blessings (
-    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
-if (!$conn->query($create_bless_table)) {
-    die(json_encode(['success' => false, 'message' => '创建祝福表失败: ' . $conn->error]));
-}
+// 创建必要的数据库和表
+createDatabaseAndTables($conn);
 
 // 处理GET请求 - 获取祝福数
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
@@ -39,14 +25,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 }
 // 处理POST请求 - 增加祝福
 elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // 检查IP频率限制（每2分钟只能发送一次）
+    // 获取用户唯一标识（IP + User-Agent的组合，解决同一内网下不同设备的问题）
+    $user_ip = $_SERVER['REMOTE_ADDR'];
+    $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? 'unknown';
+    // 使用MD5生成唯一的user_id，避免存储明文IP和User-Agent
+    $user_id = md5($user_ip . $user_agent);
+    
+    // 检查用户频率限制（每2分钟只能发送一次）
     $two_minutes_ago = date('Y-m-d H:i:s', strtotime('-2 minutes'));
-    $sql = "SELECT created_at FROM blessings WHERE created_at >= ? ORDER BY created_at DESC LIMIT 1";
+    $sql = "SELECT created_at FROM blessings WHERE user_id = ? AND created_at >= ? ORDER BY created_at DESC LIMIT 1";
     $stmt = $conn->prepare($sql);
     if (!$stmt) {
         die(json_encode(['success' => false, 'message' => '准备限制检查失败: ' . $conn->error]));
     }
-    $stmt->bind_param("s", $two_minutes_ago);
+    $stmt->bind_param("ss", $user_id, $two_minutes_ago);
     $stmt->execute();
     $stmt->bind_result($last_time);
     $stmt->fetch();
@@ -57,12 +49,13 @@ elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
         die(json_encode(['success' => false, 'message' => '请间隔2分钟后再发送祝福，还需等待' . $remaining_time . '秒']));
     }
     
-    // 插入祝福记录
-    $sql = "INSERT INTO blessings () VALUES ()";
+    // 插入祝福记录，包含user_id
+    $sql = "INSERT INTO blessings (user_id) VALUES (?)";
     $stmt = $conn->prepare($sql);
     if (!$stmt) {
         die(json_encode(['success' => false, 'message' => '准备插入祝福失败: ' . $conn->error]));
     }
+    $stmt->bind_param("s", $user_id);
     
     if (!$stmt->execute()) {
         $stmt->close();

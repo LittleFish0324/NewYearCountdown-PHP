@@ -2,72 +2,63 @@
 // 设置响应头
 header('Content-Type: application/json');
 
-// 直接定义数据库配置
-$servername = "localhost";
-$username = "newyearcountdown";
-$password = "NPcm7A9wiGYiSfdT";
-$dbname = "newyearcountdown";
+// 引入配置文件
+require_once '../config.php';
 
-// 创建数据库连接
-$conn = new mysqli($servername, $username, $password, $dbname);
+// 获取数据库连接
+$conn = getDbConnection();
 
-// 检查连接
-if ($conn->connect_error) {
-    die(json_encode(['success' => false, 'message' => '数据库连接失败']));
+// 创建必要的数据库和表
+createDatabaseAndTables($conn);
+
+// 加载敏感词
+function loadSensitiveWords() {
+    $banword_dir = '../banword';
+    $sensitive_words = [];
+    
+    if (is_dir($banword_dir)) {
+        $files = scandir($banword_dir);
+        foreach ($files as $file) {
+            if (pathinfo($file, PATHINFO_EXTENSION) === 'txt') {
+                $file_path = $banword_dir . '/' . $file;
+                $words = file($file_path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+                $sensitive_words = array_merge($sensitive_words, $words);
+            }
+        }
+    }
+    
+    // 移除空词和重复词
+    $sensitive_words = array_unique(array_filter(array_map('trim', $sensitive_words)));
+    // 按长度降序排序，优先匹配长词
+    usort($sensitive_words, function($a, $b) {
+        return mb_strlen($b) - mb_strlen($a);
+    });
+    
+    return $sensitive_words;
 }
 
-// 创建留言表（如果不存在） - 与实际表结构匹配
-$create_message_table = "CREATE TABLE IF NOT EXISTS message (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    nickname VARCHAR(50) NOT NULL,
-    content TEXT NOT NULL,
-    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
-$conn->query($create_message_table);
-
-// 违禁词列表
-$forbidden_words = [
-    // 政治敏感词
-    '政治', '共产党', '政府', '习近平', '李克强', '毛泽东', 
-    '天安门', '中南海', '国务院', '外交部', '国防部', 
-    
-    // 色情低俗词
-    '色情', '黄色', '成人', '性爱', '妓女', '嫖客', 
-    '裸照', '三级片', 'AV', '色情网站', '黄色网站',
-    
-    // 暴力恐怖词
-    '暴力', '恐怖', '杀人', '抢劫', '爆炸', '毒品',
-    '枪支', '炸弹', '自杀', '自残', '恐怖分子',
-    
-    // 赌博博彩词
-    '赌博', '博彩', '彩票', '赌场', '赌球', '六合彩',
-    '时时彩', '赌钱', '下注', '赔率', '开奖',
-    
-    // 广告推广词
-    '广告', '推广', '营销', '代购', '微商', '加盟',
-    '赚钱', '兼职', '创业', '投资', '理财',
-    
-    // 其他违规词
-    '黑客', '病毒', '破解', '翻墙', 'VPN', '盗版',
-    '假货', '诈骗', '骗人', '坑人', '垃圾', '废物'
-];
-
 // 违禁词过滤函数
-function filter_forbidden_words($text) {
-    global $forbidden_words;
+function filter_forbidden_words($text, $sensitive_words = null) {
+    if ($sensitive_words === null) {
+        $sensitive_words = loadSensitiveWords();
+    }
+    
     $filtered_text = $text;
-    foreach ($forbidden_words as $word) {
+    foreach ($sensitive_words as $word) {
         $filtered_text = str_replace($word, str_repeat('*', mb_strlen($word)), $filtered_text);
     }
     return $filtered_text;
 }
 
-// 检测文本中是否包含违禁词
-function contains_forbidden_words($text) {
-    global $forbidden_words;
-    foreach ($forbidden_words as $word) {
-        if (strpos($text, $word) !== false) {
-            return true;
+// 检测文本中是否包含违禁词，返回第一个匹配的敏感词
+function contains_forbidden_words($text, $sensitive_words = null) {
+    if ($sensitive_words === null) {
+        $sensitive_words = loadSensitiveWords();
+    }
+    
+    foreach ($sensitive_words as $word) {
+        if (mb_strpos($text, $word) !== false) {
+            return $word;
         }
     }
     return false;
@@ -121,28 +112,31 @@ function isLowQualityContent($content) {
     return false;
 }
 
-// 检测IP频率限制（5小时内最多5次，每次间隔5分钟）
-function check_ip_limit($ip) {
+// 检测用户频率限制（5小时内最多5次，每次间隔5分钟）
+function check_user_limit($user_id) {
     global $conn;
     
     // 检查5小时内的发布次数
     $five_hours_ago = date('Y-m-d H:i:s', strtotime('-5 hours'));
-    $sql = "SELECT COUNT(*) as count FROM message WHERE create_time >= ?";
+    $sql = "SELECT COUNT(*) as count FROM message WHERE user_id = ? AND create_time >= ?";
     $stmt = $conn->prepare($sql);
-    $stmt->bind_param("s", $five_hours_ago);
+    $stmt->bind_param("ss", $user_id, $five_hours_ago);
     $stmt->execute();
+    $count = 0;
     $stmt->bind_result($count);
     $stmt->fetch();
     $stmt->close();
     
     if ($count >= 5) {
-        return ['success' => false, 'message' => '同一个IP在5小时内只能发布5次祝福'];
+        return ['success' => false, 'message' => '同一个用户在5小时内只能发布5次祝福'];
     }
     
     // 检查上次发布时间（间隔5分钟）
-    $sql = "SELECT create_time FROM message ORDER BY create_time DESC LIMIT 1";
+    $sql = "SELECT create_time FROM message WHERE user_id = ? ORDER BY create_time DESC LIMIT 1";
     $stmt = $conn->prepare($sql);
+    $stmt->bind_param("s", $user_id);
     $stmt->execute();
+    $last_time = null;
     $stmt->bind_result($last_time);
     $stmt->fetch();
     $stmt->close();
@@ -274,6 +268,22 @@ elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
     
+    // 获取用户唯一标识（IP + User-Agent的组合，解决同一内网下不同设备的问题）
+    $user_ip = $_SERVER['REMOTE_ADDR'];
+    $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? 'unknown';
+    // 使用MD5生成唯一的user_id，避免存储明文IP和User-Agent
+    $user_id = md5($user_ip . $user_agent);
+    
+    // 检测用户频率限制（5小时内最多5次，每次间隔5分钟）
+    $limit_result = check_user_limit($user_id);
+    if (!$limit_result['success']) {
+        echo json_encode($limit_result);
+        exit;
+    }
+    
+    // 加载敏感词（只加载一次，提高性能）
+    $sensitive_words = loadSensitiveWords();
+    
     // 检测URL
     $url_pattern = '/(https?:\/\/|www\.|([a-zA-Z0-9][-a-zA-Z0-9]{0,62}(\.[a-zA-Z0-9][-a-zA-Z0-9]{0,62})+\.?)|(\d+\.\d+\.\d+\.\d+(:\d+)?))(\/[^\s]*)?/i';
     if (preg_match($url_pattern, $content)) {
@@ -287,19 +297,27 @@ elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
     
-    // 检测违禁词
-    if (contains_forbidden_words($content)) {
-        echo json_encode(['success' => false, 'message' => '留言内容包含违禁词，请修改后重新提交']);
+    // 检测昵称是否包含敏感词
+    $bad_word = contains_forbidden_words($nickname, $sensitive_words);
+    if ($bad_word) {
+        echo json_encode(['success' => false, 'message' => '昵称包含敏感词：' . $bad_word]);
+        exit;
+    }
+    
+    // 检测内容是否包含敏感词
+    $bad_word = contains_forbidden_words($content, $sensitive_words);
+    if ($bad_word) {
+        echo json_encode(['success' => false, 'message' => '留言内容包含敏感词：' . $bad_word]);
         exit;
     }
     
     // 过滤违禁词
-    $filtered_content = filter_forbidden_words($content);
+    $filtered_content = filter_forbidden_words($content, $sensitive_words);
     
-    // 插入留言
-    $sql = "INSERT INTO message (nickname, content) VALUES (?, ?)";
+    // 插入留言，包含user_id
+    $sql = "INSERT INTO message (nickname, content, user_id) VALUES (?, ?, ?)";
     $stmt = $conn->prepare($sql);
-    $stmt->bind_param("ss", $nickname, $filtered_content);
+    $stmt->bind_param("sss", $nickname, $filtered_content, $user_id);
     
     if ($stmt->execute()) {
         echo json_encode(['success' => true, 'message' => '留言发布成功']);
@@ -313,4 +331,3 @@ elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // 关闭连接
 $conn->close();
-?>

@@ -853,7 +853,7 @@
     <div class="container">
         <header>
             <h1>2026新年倒计时</h1>
-            <p>迎接公历新年与农历春节，共赴美好新岁</p>
+            <p>迎接公历新年与农历春节，共赴美好新岁<br><a href="https://github.com/LittleFish0324/NewYearCountdown-PHP" style="color: #ffd700;">项目已开源github，欢迎使用，点我跳转</a>，作者：广东LittleFish（抖音）<br><a href="https://www.rainyun.com/gdfish_">雨云7周年庆典盛大开启！！宁波/香港多区云服务器惊爆价！最低 99元/年起！</a></p>
         </header>
 
         <!-- 优化后的倒计时区域 -->
@@ -906,7 +906,7 @@
             <div class="error-message" id="message-error"></div>
             
             <!-- 表单容器：发布留言和筛选表单并排显示 -->
-            <div style="display: grid;
+            <div class="form-container" style="display: grid;
                 grid-template-columns: 1fr 1fr;
                 gap: 20px;
                 margin-bottom: 25px;">
@@ -986,8 +986,25 @@
             <!-- 响应式布局：在小屏幕设备上自动调整为垂直布局 -->
             <style>
                 @media (max-width: 992px) {
-                    .message-section > div:first-of-type {
+                    .form-container {
                         grid-template-columns: 1fr !important;
+                    }
+                }
+                /* 适配更小屏幕，确保表单元素正常显示 */
+                @media (max-width: 768px) {
+                    .form-container {
+                        padding: 0 10px;
+                        gap: 15px;
+                    }
+                    .message-form, .filter-section {
+                        padding: 15px;
+                    }
+                    .form-group input, .form-group textarea {
+                        padding: 10px;
+                    }
+                    #submit-btn {
+                        padding: 10px 25px;
+                        font-size: 1rem;
                     }
                 }
             </style>
@@ -1040,11 +1057,9 @@
         })();
 
         // 2. 倒计时功能（含结束后庆祝效果）
-        let solarPopupShown = false;
-        let lunarPopupShown = false;
-
-        // 添加烟花重复发射的状态变量
         let fireworksInterval = null;
+        let celebrationTimer = null;
+        let celebrationElements = [];
 
         function updateCountdown() {
             // 目标时间：公历新年（2026-01-01 00:00:00）和春节（2026-01-29 00:00:00）
@@ -1055,6 +1070,10 @@
             // 计算时间差（处理已过期情况）
             const solarDiff = solarNewYear - now > 0 ? solarNewYear - now : 0;
             const lunarDiff = lunarNewYear - now > 0 ? lunarNewYear - now : 0;
+            
+            // 计算倒计时结束后经过的时间（毫秒）
+            const solarEndTime = now - solarNewYear;
+            const lunarEndTime = now - lunarNewYear;
 
             // 转换为天时分秒（判断是否已过期）
             const formatTime = (diff) => {
@@ -1082,9 +1101,13 @@
             document.getElementById('lunar-m').textContent = lM;
             document.getElementById('lunar-s').textContent = lS;
 
+            // 检查是否已经显示过公历新年庆祝效果
+            const hasShownSolarCelebration = localStorage.getItem('hasShownSolarCelebration') === 'true';
             // 公历新年倒计时结束效果（烟花+高亮）
-            if (solarDiff === 0 && !solarPopupShown) {
-                solarPopupShown = true;
+            // 只有在倒计时结束后1小时内才触发庆祝效果，避免页面刷新时重复触发
+            if (solarDiff === 0 && !hasShownSolarCelebration && solarEndTime < 3600000) {
+                // 标记已显示庆祝效果
+                localStorage.setItem('hasShownSolarCelebration', 'true');
                 document.querySelector('#countdown-solar').parentElement.style.background = 'rgba(255, 210, 102, 0.3)';
                 // 显示庆祝文字
                 showCelebrationText('🎉 2026公历新年已到！祝你新年快乐，万事顺意！🎉');
@@ -1097,12 +1120,18 @@
                             fireworks.launch(10);
                         }, 3000);
                     }
+                    // 30秒后停止庆祝效果
+                    setTimeout(stopCelebration, 30000);
                 }, 800);
             }
 
+            // 检查是否已经显示过农历春节庆祝效果
+            const hasShownLunarCelebration = localStorage.getItem('hasShownLunarCelebration') === 'true';
             // 农历春节倒计时结束效果（烟花+高亮）
-            if (lunarDiff === 0 && !lunarPopupShown) {
-                lunarPopupShown = true;
+            // 只有在倒计时结束后1小时内才触发庆祝效果，避免页面刷新时重复触发
+            if (lunarDiff === 0 && !hasShownLunarCelebration && lunarEndTime < 3600000) {
+                // 标记已显示庆祝效果
+                localStorage.setItem('hasShownLunarCelebration', 'true');
                 document.querySelector('#countdown-lunar').parentElement.style.background = 'rgba(255, 154, 139, 0.3)';
                 // 显示庆祝文字
                 showCelebrationText('🧧 2026农历春节快乐！愿你阖家幸福，龙年大吉！🧧');
@@ -1115,8 +1144,38 @@
                             fireworks.launch(10);
                         }, 3000);
                     }
+                    // 30秒后停止庆祝效果
+                    setTimeout(stopCelebration, 30000);
                 }, 800);
             }
+        }
+
+        // 停止庆祝效果函数
+        function stopCelebration() {
+            // 清除烟花发射定时器
+            if (fireworksInterval) {
+                clearInterval(fireworksInterval);
+                fireworksInterval = null;
+            }
+            // 清除古诗轮播定时器
+            if (poemSwitchInterval) {
+                clearInterval(poemSwitchInterval);
+                poemSwitchInterval = null;
+            }
+            // 停止所有烟花动画
+            if (typeof fireworks !== 'undefined' && typeof fireworks.clear === 'function') {
+                fireworks.clear();
+            }
+            // 移除所有庆祝元素
+            celebrationElements.forEach(element => {
+                if (element && element.parentNode) {
+                    element.parentNode.removeChild(element);
+                }
+            });
+            celebrationElements = [];
+            // 移除倒计时结束样式
+            const countdownsContainer = document.querySelector('.countdowns');
+            countdownsContainer.classList.remove('countdown-ended');
         }
 
         // 2. 设备时钟与标准时间对比功能（从国内NTP服务器获取时间）
@@ -2357,6 +2416,7 @@
                 transition: background 0.5s ease;
             `;
             document.body.appendChild(overlay);
+            celebrationElements.push(overlay);
             
             // 4. 创建庆祝文字元素，使用新的CSS类
             const celebrationDiv = document.createElement('div');
@@ -2364,6 +2424,7 @@
             celebrationDiv.className = 'celebration-text';
             celebrationDiv.textContent = text;
             document.body.appendChild(celebrationDiv);
+            celebrationElements.push(celebrationDiv);
             
             // 5. 获取古诗列表
             await fetchPoems();
@@ -2425,9 +2486,9 @@
                 Date.parse = originalDate.parse;
                 Date.UTC = originalDate.UTC;
                 
-                // 重置标志位，以便再次触发庆祝效果
-                solarPopupShown = false;
-                lunarPopupShown = false;
+                // 重置localStorage标志，以便再次触发庆祝效果
+                localStorage.removeItem('hasShownSolarCelebration');
+                localStorage.removeItem('hasShownLunarCelebration');
                 
                 // 使用setInterval更新偏移量，让时间正常流逝
                 timerInterval = setInterval(() => {
@@ -2438,37 +2499,9 @@
                 // 35秒后恢复原始Date构造函数
                 setTimeout(() => {
                     clearInterval(timerInterval);
-                    // 清除烟花发射间隔
-                    if (fireworksInterval) {
-                        clearInterval(fireworksInterval);
-                        fireworksInterval = null;
-                    }
-                    // 清除古诗词切换定时器
-                    if (poemSwitchInterval) {
-                        clearInterval(poemSwitchInterval);
-                        poemSwitchInterval = null;
-                    }
+                    // 调用停止庆祝效果函数
+                    stopCelebration();
                     Date = originalDate;
-                    
-                    // 移除countdown-ended类，使倒计时模块归位
-                    const countdownsContainer = document.querySelector('.countdowns');
-                    countdownsContainer.classList.remove('countdown-ended');
-                    
-                    // 移除页面变暗效果
-                    const overlay = document.getElementById('fireworks-overlay');
-                    if (overlay) {
-                        overlay.remove();
-                    }
-                    
-                    // 移除庆祝文字元素
-                    const celebrationText = document.getElementById('celebration-text');
-                    if (celebrationText) {
-                        celebrationText.remove();
-                    }
-                    
-                    // 重置标志位
-                    solarPopupShown = false;
-                    lunarPopupShown = false;
                     
                     alert('倒计时结束效果体验完毕，已恢复正常时间。');
                 }, 35000);

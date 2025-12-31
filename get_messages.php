@@ -1,19 +1,14 @@
 <?php
 header('Content-Type: application/json');
 
-// 直接定义数据库配置
-$servername = "localhost";
-$username = "newyearcountdown";
-$password = "NPcm7A9wiGYiSfdT";
-$dbname = "newyearcountdown";
+// 引入配置文件
+require_once 'config.php';
 
-// 创建数据库连接
-$conn = new mysqli($servername, $username, $password, $dbname);
+// 获取数据库连接
+$conn = getDbConnection();
 
-// 检查连接
-if ($conn->connect_error) {
-    die(json_encode(['success' => false, 'message' => '数据库连接失败']));
-}
+// 创建必要的数据库和表
+createDatabaseAndTables($conn);
 
 // 获取最近的留言
 $stmt = $conn->prepare("SELECT nickname, content FROM message ORDER BY create_time DESC LIMIT 50");

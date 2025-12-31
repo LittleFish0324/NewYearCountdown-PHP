@@ -1,19 +1,14 @@
 <?php
 header('Content-Type: application/json');
 
-// 直接定义数据库配置
-$servername = "localhost";
-$username = "newyearcountdown";
-$password = "NPcm7A9wiGYiSfdT";
-$dbname = "newyearcountdown";
+// 引入配置文件
+require_once 'config.php';
 
-// 创建数据库连接
-$conn = new mysqli($servername, $username, $password, $dbname);
+// 获取数据库连接
+$conn = getDbConnection();
 
-// 检查连接
-if ($conn->connect_error) {
-    die(json_encode(['success' => false, 'message' => '数据库连接失败']));
-}
+// 创建必要的数据库和表
+createDatabaseAndTables($conn);
 
 // 获取用户IP
 $user_ip = $_SERVER['REMOTE_ADDR'];
@@ -21,6 +16,42 @@ $user_ip = $_SERVER['REMOTE_ADDR'];
 // 获取表单数据
 $nickname = $_POST['nickname'] ?? '';
 $content = $_POST['content'] ?? '';
+
+// 加载敏感词
+function loadSensitiveWords() {
+    $banword_dir = './banword';
+    $sensitive_words = [];
+    
+    if (is_dir($banword_dir)) {
+        $files = scandir($banword_dir);
+        foreach ($files as $file) {
+            if (pathinfo($file, PATHINFO_EXTENSION) === 'txt') {
+                $file_path = $banword_dir . '/' . $file;
+                $words = file($file_path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+                $sensitive_words = array_merge($sensitive_words, $words);
+            }
+        }
+    }
+    
+    // 移除空词和重复词
+    $sensitive_words = array_unique(array_filter(array_map('trim', $sensitive_words)));
+    // 按长度降序排序，优先匹配长词
+    usort($sensitive_words, function($a, $b) {
+        return mb_strlen($b) - mb_strlen($a);
+    });
+    
+    return $sensitive_words;
+}
+
+// 敏感词检测
+function checkSensitiveWords($text, $sensitive_words) {
+    foreach ($sensitive_words as $word) {
+        if (mb_strpos($text, $word) !== false) {
+            return $word;
+        }
+    }
+    return false;
+}
 
 // 验证数据
 if (empty($nickname) || empty($content)) {
@@ -30,6 +61,21 @@ if (empty($nickname) || empty($content)) {
 // 限制消息长度
 if (mb_strlen($content) > 500) {
     die(json_encode(['success' => false, 'message' => '祝福内容不能超过500个字符']));
+}
+
+// 加载敏感词
+$sensitive_words = loadSensitiveWords();
+
+// 检查昵称是否包含敏感词
+$bad_word = checkSensitiveWords($nickname, $sensitive_words);
+if ($bad_word) {
+    die(json_encode(['success' => false, 'message' => '昵称包含敏感词：' . $bad_word]));
+}
+
+// 检查内容是否包含敏感词
+$bad_word = checkSensitiveWords($content, $sensitive_words);
+if ($bad_word) {
+    die(json_encode(['success' => false, 'message' => '祝福内容包含敏感词：' . $bad_word]));
 }
 
 // 低质量内容检测

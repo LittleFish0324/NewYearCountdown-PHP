@@ -43,7 +43,7 @@
 
 1. **克隆或下载项目**
    ```bash
-   git clone https://github.com/LittleFish0324/NewYearCountdown-PHP
+   git clone <仓库地址>
    cd newyear_countdown
    ```
 
@@ -149,8 +149,12 @@ const bgImages = [
 - 感谢提供免费图片资源的网站
 - 感谢使用和支持本项目的用户
 
-- 提交Issue：[GitHub Issues](https://github.com/yourusername/newyear_countdown/issues)
-- 邮箱：your.email@example.com
+## 📞 联系方式
+
+如有问题或建议，欢迎通过以下方式联系：
+
+- 提交Issue：[GitHub Issues](https://github.com/LittleFish0324/NewYearCountdown-PHP/issues)
+- 邮箱：abnermod@163.com
 
 ---
 
