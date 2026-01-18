@@ -43,7 +43,7 @@
 
 1. **克隆或下载项目**
    ```bash
-   git clone <仓库地址>
+   git clone https://github.com/LittleFish0324/NewYearCountdown-PHP
    cd newyear_countdown
    ```
 
